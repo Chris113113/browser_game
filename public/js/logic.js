@@ -2,7 +2,7 @@
  *  Game logic controller to handle game state, objects, and updating the renderer.
  */
 
-define(["three", "level", "player", "skeleton", "keyboard", "jquery", "bootstrap"], function(THREE, Level, Player, Skeleton, THREEx, $) {
+define(["three", "level", "player", "skeleton", "keyboard", "jquery", "bootstrap", "chat", "title", "hud"], function(THREE, Level, Player, Skeleton, THREEx, $, bootstrap, Chat, Title, Hud) {
 
   $('#submissionForm').on('submit', function(e) {
     e.preventDefault();
@@ -26,6 +26,8 @@ define(["three", "level", "player", "skeleton", "keyboard", "jquery", "bootstrap
 
   // Constructor for this.
   function GameLogic(renderer) {
+    var self = this;
+
     // JQuery is present in this function for UI updates
     this.renderer = renderer;       // Given to us by the main controller.
     console.log("setting callback...");
@@ -38,37 +40,55 @@ define(["three", "level", "player", "skeleton", "keyboard", "jquery", "bootstrap
     this.curLevel = 1;              // Should determine difficulty, stage contents, loot...
     this.actors = new Array();      // Monsters/AI on stage for logic ticking/rendering.
     this.score = 0;
-    this.pausedHealth = 100;
 
-    // TODO: since we have no menu, just init a new level.
     this.level = null;
     this.levelHist = new Array();   // Past levels, for going back?
-    this.initLevel();
     
+    // Set up zooms
     this.currentZoom = 8000;
     this.zl = 12;
-
+    
     this.clock = new THREE.Clock(true);
 
     this.keyboard = new THREEx.KeyboardState();
+
+
+    // 0 = menu
+    // 1 = class select
+    // 2 = playing
+    //????? 3 = score submit?
+    this.state = 0;
+
+    // in pause menu
+    this.paused = false;
+
+    // Spawn a titlescreen with a func to call on start
+    this.title = new Title(function(choice) {
+      self.chat = new Chat();                    
+
+      self.title.hideMenu();
+
+      self.initLevel();
+    });
 
     return this;
   };
 
   // Instanced functions
   GameLogic.prototype = {
+    goTitleScreen: function() {
+
+    },
     // Creates a new level, positions the player.
     initLevel: function() {
-      this.level = new Level(this.curLevel);
+      var tempLogic = this;
+      this.level = new Level(this.curLevel, function() {
+        // Callback for level load finish.
+        tempLogic.initPlayer();
+        tempLogic.createMonsters();
+        tempLogic.createHud();
+      });
 
-      // Custom async controller because reasons
-      var monsterInterval = setInterval(function(level, f, th){
-        if(th.level.finishedLoading) {
-          th.initPlayer();
-          th.createMonsters();
-          clearInterval(monsterInterval);
-        }
-      }, 50, this.level, this.createMonsters, this);
     },
     // Handle things we need to do when we transition off our current level.
     storeLevel: function() {
@@ -89,6 +109,15 @@ define(["three", "level", "player", "skeleton", "keyboard", "jquery", "bootstrap
 
     // Called when a new frame is rendered, should make renderables update geometry/color/etc.
     rendUpdate: function(scene) {
+
+      // -----------------------
+      // title/pause screen
+      if (this.state === 0 || this.paused) {
+        this.title.rendUpdate(scene, this.renderer);
+      }
+      // ------------------------
+
+
       var fps = Math.round(1 / this.clock.getDelta());
 
       if(this.keyboard.pressed('z')) {
@@ -100,7 +129,10 @@ define(["three", "level", "player", "skeleton", "keyboard", "jquery", "bootstrap
         this.player.fps = fps;
         this.player.rendUpdate(scene);
         this.renderer.setCameraPos(this.player.position.x, this.player.position.y, this.currentZoom);
-        $('#playerHealth').text(this.player.health + " / " + 100);
+        if(this.player.updateHealth) {
+          this.hud.updateHealth(this.player.health, this.player.startHealth);
+          this.player.updateHealth = false;
+        }
         if(this.player.removal) {
           // Gameover code goes here
           this.player.deathSound.play();
@@ -126,14 +158,34 @@ define(["three", "level", "player", "skeleton", "keyboard", "jquery", "bootstrap
           if(this.actors[i].deathSound) {
             this.actors[i].deathSound.play();
           }
+          
+          if(Math.random() > .95) {
+            this.chat.addChatMessage({username:'', message:'Item upgrade found! Damage Increased!'}, {color: '00ff00'});
+            this.player.damage *= 2;
+          }
+
+          if(Math.random() > .95) {
+            this.chat.addChatMessage({username:'', message:'Item upgrade found! Movement Speed Increased!'}, {color: '00ff00'});
+            this.player.distance *= 1.5;
+          }
+
+          if(Math.random() > .95) {
+            this.chat.addChatMessage({username:'', message:'Item upgrade found! Attack Speed Increased!'}, {color: '00ff00'});
+            this.player.attackDelay /= 1.5;
+          }
+
+          if(Math.random() > .95) {
+            this.chat.addChatMessage({username:'', message:'Item found! Health Increased!'}, {color: '00ff00'});
+            this.player.health += 10;
+            this.player.updateHealth = true;
+          }
+
           this.actors[i] = null;
           this.actors.splice(i--,1);
           if(this.player.health > 0) {
             this.score += 10;
-          }
-          $('#playerScore').text("Score: " + this.score);
-          $('#hiddenScoreDiv').text(this.score);
-          $('#modalScore').val(this.score);
+            this.hud.updateScore(this.score);
+          }          
           $('#monsterText').text(this.actors.length + " Monsters remain.");
           if(this.actors.length == 0 && this.player.health > 0) { // Only the player is left
             setTimeout(function(th) {
@@ -153,43 +205,44 @@ define(["three", "level", "player", "skeleton", "keyboard", "jquery", "bootstrap
     },
 
     initPlayer: function() {
-      var newX = Math.floor(Math.random()*this.level.numCells);
-      var newY = Math.floor(Math.random()*this.level.numCells);
+      var randPos = this.level.getOpenSpot();
 
-      //Make sure there's no wall where we want to place the Player
-      while(this.level.cells[newX][newY].filled) {
-        newX = Math.floor(Math.random()*this.level.numCells);
-        newY = Math.floor(Math.random()*this.level.numCells);
-      }
-      this.player = new Player((newX*2*this.level.wallSize) - this.level.offset, newY*2*this.level.wallSize - this.level.offset);
+      this.player = new Player(randPos[0], randPos[1], this.title.choice, this.pausedHealth);
+      this.pausedHealth = this.player.health;
       this.renderer.setCameraLookAt(this.player.position);
-      this.player.health = this.pausedHealth;
     },
 
     initSkeletons: function() {
       var numSkeletons = Math.floor(Math.random() * 10 + 5);
       for(var i = 0; i < numSkeletons; i++) {
-        var newX = Math.floor(Math.random()*this.level.numCells);
-        var newY = Math.floor(Math.random()*this.level.numCells);
+        var randPos = this.level.getOpenSpot();
 
-        //Make sure there's no wall where we want to place the skeleton
-        while(this.level.cells[newX][newY].filled) {
-          newX = Math.floor(Math.random()*this.level.numCells);
-          newY = Math.floor(Math.random()*this.level.numCells);
-        }
-        this.actors.push(new Skeleton((newX*2*this.level.wallSize) - this.level.offset, newY*2*this.level.wallSize - this.level.offset));
+        this.actors.push(new Skeleton(randPos[0], randPos[1]));
+
         this.actors[this.actors.length-1].player = this.player;
         this.actors[this.actors.length-1].health *= this.curLevel;
       }
     },
 
-    gameOver: function() {
-      console.log('game over');
-      $('#modal-button').click();
-    }
+    createHud: function() {
+      this.hud = new Hud();
+      this.hud.updateHealth(this.player.health, this.player.startHealth);
+      this.hud.updateScore(this.score);
+    },
 
-    
-  };
+    gameOver: function() {
+      $.ajax({
+        url : "/score",
+        type: "POST",
+        data: {username:this.chat.username, userscore:this.score},
+        success: function (data) {
+        },
+        error: function (jXHR, textStatus, errorThrown) {
+            alert(errorThrown);
+        }
+        });
+    }
+  }
 
   // Static functions
   //GameLogic.someFunc = function() {....};

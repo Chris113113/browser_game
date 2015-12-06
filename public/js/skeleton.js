@@ -2,14 +2,14 @@
  *  Skeleton object. Should probably be inheriting a collidable/generic entity object. TODO.
  */
 
-define(['three', 'keyboard', 'textureAnimator', 'enemy'], function(THREE, THREEx, TextureAnimator, Enemy) {
+define(['three', 'keyboard', 'textureAnimator', 'enemy', 'assets'], function(THREE, THREEx, TextureAnimator, Enemy, Assets) {
 
   // Private static.
   var numSkeletons = 0;
 
-  var skeletonRightMap = THREE.ImageUtils.loadTexture( "js/assets/skeleton/right.png" );
+  var skeletonRightMap = Assets.skeletonRightMap;
   skeletonRightMap.magFilter = THREE.NearestFilter;
-  var skeletonLeftMap = THREE.ImageUtils.loadTexture( "js/assets/skeleton/left.png" );
+  var skeletonLeftMap = Assets.skeletonLeftMap;
   skeletonLeftMap.magFilter = THREE.NearestFilter;
 
   var skeletonSpriteMat = new THREE.SpriteMaterial( { map: skeletonRightMap, color: 0xffffff, fog: false, sizeAttenuation: false, size: 32} );
@@ -22,6 +22,11 @@ define(['three', 'keyboard', 'textureAnimator', 'enemy'], function(THREE, THREEx
     this.initX = x || 0;
     this.initY = y || 0;
     this.attackDelay = Math.floor(Math.random() * 100) + 50;
+
+    this.attackSound = Assets.skeleAttack;
+    this.hitSound = Assets.skeleHit;
+    // this.hurtSound = new Audio('js/assets/player/sounds/hurt.wav');
+    this.deathSound = Assets.skeleDeath;
   };
 
   Skeleton.prototype = Object.create(Enemy.prototype); // is-a Enemy inheritance.
@@ -71,7 +76,8 @@ define(['three', 'keyboard', 'textureAnimator', 'enemy'], function(THREE, THREEx
   // For when it's first being added to a scene.
   Skeleton.prototype.rendInit = function(scene) {
     // http://threejs.org/docs/#Reference/Objects/Sprite
-    var sprite = new THREE.Sprite( skeletonSpriteMat );
+    var curSpriteMat = new THREE.SpriteMaterial( { map: skeletonRightMap, color: 0xffffff, fog: false, sizeAttenuation: false, size: 32} );
+    var sprite = new THREE.Sprite( curSpriteMat );
     console.log("initting skele");
     sprite.scale.set(this.scale,this.scale,1);
     sprite.name = "skeletonSprite"; //TODO: random GUID? store them. also.
@@ -90,10 +96,6 @@ define(['three', 'keyboard', 'textureAnimator', 'enemy'], function(THREE, THREEx
     // console.log(this.animator2);
 
     
-    this.attackSound = new Audio('js/assets/skeleton/sounds/attackSound.wav');
-    this.hitSound = new Audio('js/assets/skeleton/sounds/hitSound.wav');
-    // this.hurtSound = new Audio('js/assets/player/sounds/hurt.wav');
-    this.deathSound = new Audio('js/assets/skeleton/sounds/deathSound.wav');
     
     scene.add(sprite);
     // this.showRaycastLines();

@@ -1,11 +1,14 @@
+var log     = require('winston');
 var express = require('express');
-var redis = require('redis');
-var client = redis.createClient();
-var app = express();
+var redis   = require('redis');
+var _       = require('underscore');
+var lodash  = require('lodash');
+var client  = redis.createClient();
+var app     = express();
 //server
-var http = require('http').Server(app);
+var http    = require('http').Server(app);
 //io
-var io = require('socket.io')(http);
+var io      = require('socket.io')(http);
 
 var bodyParser = require('body-parser');
 
@@ -41,7 +44,8 @@ app.get('/score', function(req, res) {
     for(var i = 0; i < reply.length; i++) {
       retObj.push(JSON.parse(reply[i]));
     }
-    res.status(200).json(reply).end();
+    retObj = lodash.chain(retObj).sortBy('userscore').reverse();
+    res.status(200).json(retObj).end();
   });
 });
 
@@ -62,13 +66,14 @@ app.get(/^(.+)$/, function(req, res) {
 // Chatroom
 
 // usernames which are currently connected to the chat
-var usernames = {};
+var usernames = [];
 var numUsers = 0;
 
 
 
 io.on('connection', function (socket) {
   var addedUser = false;
+  log.info("got connection from: ", socket.request.connection.remoteAddress); 
 
   // when the client emits 'new message', this listens and executes
   socket.on('new message', function (data) {
@@ -85,10 +90,17 @@ io.on('connection', function (socket) {
   });
   // when the client emits 'add user', this listens and executes
   socket.on('add user', function (username) {
+    log.info("recv'd user add",username);
+    
+    // everyone must be unique!
+    if (usernames.indexOf(username) !== 1) {
+      username = username + "+"
+    }
+
     // we store the username in the socket session for this client
     socket.username = username;
-    // add the client's username to the global list
-    usernames[username] = username;
+
+    usernames.push(username);
     ++numUsers;
     addedUser = true;
     socket.emit('login', {
@@ -103,6 +115,7 @@ io.on('connection', function (socket) {
 
   // when the client emits 'typing', we broadcast it to others
   socket.on('typing', function () {
+    log.info("recv'd typing ", socket.username);
     socket.broadcast.emit('typing', {
       username: socket.username
     });
@@ -117,9 +130,11 @@ io.on('connection', function (socket) {
 
   // when the user disconnects.. perform this
   socket.on('disconnect', function () {
+    log.info("recv'd disconn", socket.username);
     // remove the username from global usernames list
     if (addedUser) {
-      delete usernames[socket.username];
+      //delete usernames[socket.username];
+      usernames = _.without(usernames, socket.username);
       --numUsers;
 
       // echo globally that this client has left

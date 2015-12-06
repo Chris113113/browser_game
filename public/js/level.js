@@ -2,31 +2,43 @@
  *  Level object. TODO: decide how we want to make levels infinite/random
  */
 
-define(['three'], function(THREE) {
+define(['three', 'assets'], function(THREE, Assets) {
 
   // Private static.
-  // Grass texture for the default backing. TODO: loading screen instead?
-  var grassMap = THREE.ImageUtils.loadTexture( "js/assets/level/grass.png" );
+  // Grass texture for the default backing. 
+  var grassMap = Assets.grassMap;
   grassMap.wrapS = grassMap.wrapT = THREE.RepeatWrapping;
   grassMap.repeat.set( 40, 40 ); // Larger values mean tinier texture.
+
+  var wallSize = 250;
 
   // Properties for the backing.
   var backGeo = new THREE.PlaneGeometry(30000, 30000, 0); // TODO: planegeometry or sprite better?
   var backMat = new THREE.MeshLambertMaterial( { map: grassMap, color: 0xffffff, shading: THREE.FlatShading, overdraw: 0.5 } );
-  var wallMap = THREE.ImageUtils.loadTexture( "js/assets/level/wall.jpg" );
+  var wallMap = Assets.wallMap;
 
+  var wallGeo = new THREE.BoxGeometry(wallSize, wallSize, 3*wallSize);
+  var wallMat =  new THREE.MeshBasicMaterial({map: wallMap, color: 0xffffff, overdraw: .5});
+  var wallSpriteMat = new THREE.SpriteMaterial( { map: wallMap, color: 0xffffff, fog: false, sizeAttenuation: false, size: 32} );
+  var wallSprite = new THREE.Sprite(wallSpriteMat);
 
   // Constructor.
-  function Level(curLevel) {
+  function Level(curLevel, onLoadCB) {
     this.curLevel = curLevel;
     console.log(this.curLevel);
     this.rendInitted = false;
     this.cells = [];
     this.walls = [];
     this.walls2 = new Array();
-    this.wallSize = 250;
+    this.wallSize = wallSize;
     this.numCells = Math.floor(Math.random()*10 + 5);
     this.zoomLevels = [2000, 4000, 8000, 16000, 32000];
+    
+
+    if (onLoadCB === undefined) {
+      onLoadCB = function(){}; // if no callback do nothing
+    }
+    this.onLoadCallback = onLoadCB;
   };
 
   // Instanced destructor...
@@ -48,6 +60,8 @@ define(['three'], function(THREE) {
       this.scene.remove(this.walls2[i]);
       this.walls2.splice(i,1);
     }
+
+    this.scene.remove(this.mesh);
   }
 
   // For when it's first being added to a scene.
@@ -79,9 +93,9 @@ define(['three'], function(THREE) {
     
     var innerBackGeo = new THREE.PlaneGeometry( 2 * this.numCells * this.wallSize, 2 * this.numCells * this.wallSize, 1);
     
-    var innerBackMap = THREE.ImageUtils.loadTexture( "js/assets/level/darkWood.jpg" );
+    var innerBackMap = Assets.innerBackMap;
     if(this.curLevel <= 3) {
-      innerBackMap = THREE.ImageUtils.loadTexture( "js/assets/level/woodFloor.jpg");
+      innerBackMap = Assets.woodFloor;
     }
 
     innerBackMap.wrapS = innerBackMap.wrapT = THREE.RepeatWrapping;
@@ -120,7 +134,7 @@ define(['three'], function(THREE) {
     var visited = [];
 
     if(this.curLevel > 2) {
-      wallMap = THREE.ImageUtils.loadTexture( "js/assets/level/darkBricks.png" );
+      wallMap = Assets.darkBricks;
     }
 
     for(var i = 0; i < this.numCells; i++) {
@@ -163,8 +177,8 @@ define(['three'], function(THREE) {
     //     }
     //   }
     // }
+    
     console.log('finished generating level');
-    this.addWallsToScene(scene);
   }
 
   Level.prototype.carve = function(cx, cy, visited, scene) {
@@ -234,10 +248,16 @@ define(['three'], function(THREE) {
 }
 
   Level.prototype.newWall = function(x, y, z) {
+    /*
+    var wallCpy =  new THREE.Sprite(wallSpriteMat);
+    wallCpy.name = 'wall';
+    wallCpy.scale = 40;
+    wallCpy.position.set(x,y,1000);
+    this.walls2.push(wallCpy);
+    return;
+    */
     var wallSize = this.wallSize;
-    var boxGeometry = new THREE.BoxGeometry(wallSize, wallSize, 3*wallSize);
-    var boxMaterial =  new THREE.MeshBasicMaterial({map: wallMap, color: 0xffffff, overdraw: .5});
-    var wall = new THREE.Mesh(boxGeometry, boxMaterial);
+    var wall = new THREE.Mesh(wallGeo, wallMat);
 
     wall.position.set(x,y,z);
     wall.name = 'wall';
@@ -318,19 +338,51 @@ define(['three'], function(THREE) {
       }
     }
 
+    console.log("wall count:", this.walls2.length);
     for(var i = 0; i < this.walls2.length; i++) {
       this.walls2[i].updateMatrix();
-      scene.add(this.walls2[i]);
-      // THREE.GeometryUtils.merge(mergedGeo, this.walls2[i].geometry);
-      // mergedGeo.merge(this.walls2[i].geometry, this.walls2[i].matrix);
+      //scene.add(this.walls2[i]);
+
+      //THREE.GeometryUtils.merge(mergedGeo, this.walls2[i].geometry);
+      mergedGeo.merge(this.walls2[i].geometry, this.walls2[i].matrix);
     }
 
-    // var boxMaterial =  new THREE.MeshBasicMaterial({map: wallMap, color: 0xffffff});
-    // mergedGeo.mergeVertices();
-    // var mesh = new THREE.Mesh(mergedGeo, boxMaterial);
-    // mesh.name = 'wall';
-    // scene.add(mesh);
+
+    var boxMaterial =  new THREE.MeshBasicMaterial({map: wallMap, color: 0xffffff});
+
+
+    mergedGeo.mergeVertices();
+    var buffGeo = new THREE.BufferGeometry().fromGeometry( mergedGeo );
+    var mesh = new THREE.Mesh(buffGeo, boxMaterial);
+
+    mesh.name = 'wall';
+    this.mesh = mesh;
+    scene.add(mesh);
     this.finishedLoading = true;
+    this.onLoadCallback();
+  }
+
+  // For placing stuff randomly.
+  Level.prototype.getOpenSpot = function() {
+
+    // Get a random cell entry
+    var newX = Math.floor(Math.random() * this.numCells);
+    var newY = Math.floor(Math.random() * this.numCells);
+    
+    while(this.cells[newX][newY].filled) {
+      newX = Math.floor(Math.random()*this.numCells);
+      newY = Math.floor(Math.random()*this.numCells);
+    }
+
+    // Account for cell sizes.
+    newX = newX*2*this.wallSize;
+    newY = newY*2*this.wallSize;
+
+    // "offset" is pretty much radius of the level.
+    newX = newX - this.offset;
+    newY = newY - this.offset;
+
+    return [newX, newY];
   }
 
   return Level;

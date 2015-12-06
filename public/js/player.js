@@ -2,22 +2,28 @@
  *  Player object. Should probably be inheriting a collidable/generic entity object. TODO.
  */
 
-define(['three', 'keyboard', 'textureAnimator', 'actor'], function(THREE, THREEx, TextureAnimator, Actor) {
+define(['three', 'keyboard', 'textureAnimator', 'actor', 'assets'], function(THREE, THREEx, TextureAnimator, Actor, Assets) {
 
   // Private static.
   var numPlayers = 0;
 
   // We should probably define typical player THREEJS geometry/colors/etc as private statics here, and jjust copy the right ones in rendinit based on the kind of player.
 
-  var warriorRightMap = THREE.ImageUtils.loadTexture( "js/assets/player/warriorRight.png" );
-  var warriorLeftMap = THREE.ImageUtils.loadTexture( "js/assets/player/warriorLeft.png" );
+  var warriorRightMap = Assets.warriorRightMap;
+  var warriorLeftMap = Assets.warriorLeftMap;
   warriorRightMap.magFilter = THREE.NearestFilter;
   warriorLeftMap.magFilter = THREE.NearestFilter;
-  var warriorSpriteMat = new THREE.SpriteMaterial( { map: warriorRightMap, color: 0xffffff, fog: false, sizeAttenuation: false, size: 32} );
+  var warriorSpriteMat = new THREE.SpriteMaterial( { map: warriorLeftMap, color: 0xffffff, fog: false, sizeAttenuation: false, size: 32} );
   var keyboard = new THREEx.KeyboardState();
+  var wizardRightMap = Assets.wizardRightMap;
+  // var wizardLeftMap = Assets.wizardLeftMap;
+  warriorRightMap.magFilter = THREE.NearestFilter;
+  warriorLeftMap.magFilter = THREE.NearestFilter;
+  var wizardRightSpriteMat = new THREE.SpriteMaterial( { map: wizardRightMap, color: 0xffffff, fog: false, sizeAttenuation: false, size: 32} );
+  // var wizardLeftSpriteMat = new THREE.SpriteMaterial( { map: wizardLeftMap, color: 0xffffff, fog: false, sizeAttenuation: false, size: 32} );
 
   // Constructor. Inherits Actor.
-  function Player(x, y) {
+  function Player(x, y, c, h) {
     Actor.call(this); // Call the parent constructor
     this.name="player";
     numPlayers++;
@@ -27,7 +33,28 @@ define(['three', 'keyboard', 'textureAnimator', 'actor'], function(THREE, THREEx
     this.initY = y || 0;
     this.position.x = x;
     this.position.y = y;
+    this.distance = 8;
+    this.startHealth = 100;
+    this.wasHit = false;
     //console.log('Player INITX AND Y',this.initX,this.initY);
+    this.class = c;
+    this.attackSound = Assets.plyAttack;
+    this.hitSound = Assets.plyHit;
+    this.hurtSound = Assets.plyHurt;
+    this.deathSound = Assets.plyDeath;
+
+    if(this.class == 2) {
+      this.distance = 10;
+      this.startHealth = 30;
+      this.health = 30;
+      this.damage *= (2/3);
+    }
+
+    if(h) {
+      this.health = h;
+    }
+
+    this.updateHealth = true;
   };
 
   Player.prototype = Object.create(Actor.prototype); // is-a actor inheritance.
@@ -35,7 +62,6 @@ define(['three', 'keyboard', 'textureAnimator', 'actor'], function(THREE, THREEx
   Player.prototype.destroyPlayer = function() {
     console.log('removing player');
     this.scene.remove(this.sprite);
-    this.scene.remove(this.sphere);
   }
 
   Player.prototype.move = function() {
@@ -43,26 +69,38 @@ define(['three', 'keyboard', 'textureAnimator', 'actor'], function(THREE, THREEx
     // console.log(this.canMove);
     if(keyboard.pressed('up') && this.canMove.up) {
       this.direction.y = 1;
-      this.position.y += (5 * (60/this.fps));
+      this.position.y += (this.distance * (60/this.fps));
     }
     if(keyboard.pressed('left') && this.canMove.leftDir) {
       // if(this.direction.x == 1) {
-        this.sprite.material.map = warriorLeftMap;
+        // if(this.class == 1){
+        //   this.sprite.material.map = warriorLeftMap;
+        // }
+        // else {
+        //   this.sprite.material.map = wizardLeftMap;
+        // }
+        if(this.direction.x > 0 && this.sprite.scale.x > 0) this.sprite.scale.x *= -1;
       // }
       this.direction.x = -1;
-      this.position.x -= (5 * (60/this.fps));
+      this.position.x -= (this.distance * (60/this.fps));
     }
     if(keyboard.pressed('right') && this.canMove.rightDir) {
       // if(this.direction.x == -1) {
-        this.sprite.material.map = warriorRightMap;
+       // if(this.class == 1){
+       //    this.sprite.material.map = warriorRightMap;
+       //  }
+       //  else {
+       //    this.sprite.material.map = wizardRightMap;
+       //  }
       // }
+        if(this.direction.x < 0 && this.sprite.scale.x < 0) this.sprite.scale.x *= -1;
       this.direction.x = 1;
-      this.position.x += (5 * (60/this.fps));
+      this.position.x += (this.distance * (60/this.fps));
       
     }
     if(keyboard.pressed('down') && this.canMove.down) {
       this.direction.y = -1;
-      this.position.y -= (5 * (60/this.fps));
+      this.position.y -= (this.distance * (60/this.fps));
     }
     if(keyboard.pressed('space') && this.attackCooldown <= 0) {
       this.attack(this.scene);
@@ -78,9 +116,16 @@ define(['three', 'keyboard', 'textureAnimator', 'actor'], function(THREE, THREEx
   // For when it's first being added to a scene.
   Player.prototype.rendInit = function(scene) {
     // http://threejs.org/docs/#Reference/Objects/Sprite
-    var sprite = new THREE.Sprite( warriorSpriteMat );
-
-
+    var sprite;
+    if(this.class == 1) {
+      sprite = new THREE.Sprite( warriorSpriteMat );
+    }
+    else {
+      sprite = new THREE.Sprite( wizardRightSpriteMat );
+      this.clock = new THREE.Clock();
+      this.animator = new TextureAnimator(wizardRightMap, 4, 1, 4, 75);
+      this.animRate = 1000;
+    }
 
     sprite.position.set(this.initX,this.initY,this.parallax);
     sprite.scale.set(this.scale,this.scale,1);
@@ -90,33 +135,28 @@ define(['three', 'keyboard', 'textureAnimator', 'actor'], function(THREE, THREEx
     this.scene = scene;
     this.sprite.obj = this;
 
-    this.scale.x *= -1;
+    this.updateHealth = true;
 
-    this.attackSound = new Audio('js/assets/player/sounds/swordSwing.wav');
-    this.hitSound = new Audio('js/assets/player/sounds/swordStrike.wav');
-    this.hurtSound = new Audio('js/assets/player/sounds/hurt.wav');
-    this.deathSound = new Audio('js/assets/player/sounds/death.wav');
+    // this.scale.x *= -1;
 
-    var geometry = new THREE.SphereGeometry( 5, 32, 32 );
     var material = new THREE.MeshBasicMaterial( {color: 0xffff00} );
-    this.sphere = new THREE.Mesh( geometry, material );
-    scene.add( this.sphere );
 
     scene.add(sprite);
     // this.showRaycastLines();
   };
 
-  
-
   // Updates geometry related to this.
   Player.prototype.rendUpdate = function(scene) {
     // Call the parent's.
     Actor.prototype.rendUpdate.call(this, scene);
-    this.sphere.position.set(this.position.x, this.position.y, this.parallax);
-
     // If we have any player-on-render stuff to do it'd go below.
     // this.move(); // keyboard state based movement
   };
+
+  Player.prototype.takeDamage = function(amount) {
+    Actor.prototype.takeDamage.call(this, amount);
+    this.updateHealth = true;
+  }
 
   // For when this is removed from a scene.
   Player.prototype.rendKill = function(scene) {

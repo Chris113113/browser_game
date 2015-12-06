@@ -9,7 +9,9 @@ require.config({
     projector: 'vendor/examples/renderers/Projector',
     keyboard: 'vendor/threex.keyboardstate',
     textureAnimator: 'vendor/ThreeTextureAnimator',
-    bootstrap :  "//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min"
+    bootstrap :  "http://netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min",
+    jquery: 'vendor/jquery',
+    "socket.io-client": 'vendor/socket.io'
   },
   shim: {
     three: {
@@ -32,8 +34,10 @@ require.config({
   }
 });
 
-requirejs(['renderer', 'logic'], function(Renderer, GameLogic){
+requirejs(['assets', 'renderer', 'logic'], function(Assets, Renderer, GameLogic){
   console.log("Initializing renderer...");
+
+  var load_assets = new Assets();
 
   // This will initialize our renderer with the body contents.
   var core_renderer = new Renderer();

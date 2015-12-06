@@ -2,7 +2,7 @@
  *  Actor object. Holds generic methods for players/enemies/etc.
  */
 
-define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, TextureAnimator) {
+define(['three', 'keyboard', 'textureAnimator', 'assets'], function(THREE, THREEx, TextureAnimator, Assets) {
 
   // Private static vars.
   var numActors = 0; // Count of actors in total.
@@ -19,6 +19,8 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
     this.damage = 10;
     this.removal = false;
 
+    this.timedEffects = [];
+
     this.fps = 60;
 
     this.scale = this.radius*2;
@@ -27,7 +29,8 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
     this.rays = [new THREE.Vector3(0, 1, 0),new THREE.Vector3(1, 1, 0),new THREE.Vector3(1, 0, 0),new THREE.Vector3(1, -1, 0),new THREE.Vector3(0, -1, 0),new THREE.Vector3(-1, -1, 0),new THREE.Vector3(-1, 0, 0),new THREE.Vector3(-1, 1, 0)];
     // this.rays = [new THREE.Vector3(0, 1, 0),new THREE.Vector3(1, 0, 0),new THREE.Vector3(0, -1, 0),new THREE.Vector3(-1, 0, 0)];
     this.caster = new THREE.Raycaster(this.position, this.rays[0], 0, this.radius*2);
-    this.direction = {};
+    this.attackCaster = new THREE.Raycaster(this.position, this.rays[0], 0, this.attackRadius*2);
+    this.direction = {x:1};
     this.canMove = {'up':true, 'rightDir': true, 'down': true, 'leftDir': true};
     this.attackCooldown = 0;
     // Classes must override this.attackDelay with ms delay >= 100
@@ -87,6 +90,11 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
       this.animator2.update(delta*this.animRate);
     }
 
+    // Call all the timed effects.
+    for (idx in this.timedEffects) {
+      this.timedEffects[idx](delta);
+    }
+
 
     if(this.health <= 0) {
       this.onRemove();
@@ -109,7 +117,8 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
   Actor.prototype.collision = function(scene) {
 
     // if(this.name=='skeleton') return;
-
+    var oldScale = this.sprite.scale.x;
+    if(this.scale.x < 0) this.sprite.scale.x *= -1;
     // this.canMove = {'up':true, 'right': true, 'down': true, 'left': true};
     var collisions, i, distance, obstacles;
     // Maximum distance from the origin before we consider collision
@@ -166,9 +175,12 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
       this.canMove = this.newCanMoveVals;
       //console.log(this.canMove);
     }
+    this.sprite.scale.x = oldScale;
   }
 
   Actor.prototype.attack = function(scene) {
+    var oldScale = this.sprite.scale.x;
+    if(this.scale.x < 0) this.sprite.scale.x *= -1;
     this.attackSound.play();
     // console.log(this.name,'attacking');
     this.attackCooldown += this.attackDelay;
@@ -186,7 +198,7 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
       // We reset the raycaster to this direction
       this.caster.set(this.position, this.rays[i]);
       // Test if we intersect with any obstacle mesh
-      collisions = this.caster.intersectObjects(obstacles);
+      collisions = this.attackCaster.intersectObjects(obstacles);
       // And disable that direction if we do
 
       for (var j = 0; j < collisions.length; j++) {
@@ -198,6 +210,8 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
 
           if ((i === 1 || i === 2 || i === 3) && this.direction.x === 1) {
             // do something on collision.
+            if(!!collObj.takeDamage) 
+              collObj.takeDamage(this.damage);
             collObj.health -= this.damage;
             collObj.position.x += 20;
             if(collObj.hurtSound) {
@@ -207,17 +221,21 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
             break;
           } else if ((i === 5 || i === 6 || i === 7) && this.direction.x === -1) {
             // do something on collision.
+            if(!!collObj.takeDamage) 
+              collObj.takeDamage(this.damage);
 
             collObj.health -= this.damage;
             collObj.position.x -= 20;
             if(collObj.hurtSound) {
               collObj.hurtSound.play();
-            }            
+            } 
             objHit=true;
             break;
           }
           if ((i === 0 || i === 1 || i === 7) && this.direction.y === 1) {
             // do something on collision.
+            if(!!collObj.takeDamage) 
+              collObj.takeDamage(this.damage);
 
             collObj.health -= this.damage;
             collObj.position.y += 20;
@@ -228,10 +246,12 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
             break;
           } else if ((i === 3 || i === 4 || i === 5) && this.direction.y === -1) {
             // do something on collision.
+            if(!!collObj.takeDamage) 
+              collObj.takeDamage(this.damage);
 
             collObj.health -= this.damage;
             collObj.position.y -= 20;
-            if(collObj.hurtSound) {
+            if(!!collObj.hurtSound) {
               collObj.hurtSound.play();
             }
             objHit=true;
@@ -243,6 +263,7 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
 
     if(objHit) this.hitSound.play();
     this.drawArc(scene);
+    this.sprite.scale.x = oldScale;
   }
 
   // For when this is removed from a scene.
@@ -268,7 +289,6 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
   }
 
   Actor.prototype.drawArc = function(scene) {
-    console.log('drawing arc');
     var curve;
     if(this.direction.x > 0) {  // Draw arc to the right
         curve = new THREE.EllipseCurve(
@@ -302,6 +322,44 @@ define(['three', 'keyboard', 'textureAnimator'], function(THREE, THREEx, Texture
       scene.remove(line);
     }, 200, line);
   }
+
+
+  // actor-specific damage code, overrideme.
+  Actor.prototype.takeDamage = function(amount) {
+    this.flashColor(0xFF0000, 500);
+  }
+
+  Actor.prototype.flashColor = function(hexcolor, dur) {
+    var self=this;
+    var length = 2.0;
+    var flashrate = 10;
+    this.flashAccum = 0; // how long we've flashed.
+
+    var color = new THREE.Color(hexcolor);
+    var origColor = this.sprite.material.color.clone();
+
+    // the idx our func will go into
+    var popIdx = this.timedEffects.length;
+
+    this.timedEffects.push(function(delta) {
+      self.flashAccum += delta;
+
+      var multiple = (Math.sin(self.flashAccum*flashrate)+1)/2;
+      var multinv = 1-multiple;
+
+      // lerp / inerpolate the orig color
+      self.sprite.material.color.copy(origColor).lerp(color, multiple);
+
+      if (self.flashAccum > length) {
+        self.timedEffects = self.timedEffects.splice(popIdx, 1);
+        if (self.timedEffects.length == 1) {
+          self.timedEffects = [];
+        }
+        self.sprite.material.color.set(origColor);
+      }
+    });
+
+  };
 
   return Actor;
 });
